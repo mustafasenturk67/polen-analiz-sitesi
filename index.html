@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polen Varlığı Analizi (Gemini Destekli)</title>
+    <!-- Google Font (Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* --- Değişkenler (Projenin Renk Paleti ve Ana Stilleri) --- */
+        :root {
+            --primary-green-dark: #1b5e20;
+            --primary-green: #388e3c;
+            --primary-green-hover: #2e7d32;
+            --primary-green-light: #a5d6a7;
+            --background-light: #e8f5e9;
+            --container-bg: rgba(255, 255, 255, 0.95);
+            --text-dark: #333;
+            --text-light: #555;
+            --border-dashed-color: #66bb6a;
+            --font-family: 'Inter', sans-serif;
+        }
+
+        /* --- Sayfanın Genel Stili --- */
+        body {
+            font-family: var(--font-family);
+            color: var(--text-dark);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+
+            /* Arka Plan Görseli - Doğal bir polen/bitki görseli kullanılabilir */
+            /* Placeholder: Bitki ve mikroskop görüntüsü */
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            background-size: cover;
+            background-color: var(--background-light); 
+        }
+
+        /* --- Ana İçerik Kutusu (Container) --- */
+        .container {
+            background-color: var(--container-bg);
+            padding: 100px;
+            border-radius: 15px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+            width: 100%;
+            max-width: 550px;
+            text-align: center;
+            border: 3px solid var(--primary-green);
+            box-sizing: border-box; 
+            margin: 20px;
+            transition: all 0.3s ease;
+        }
+
+        /* --- Başlık ve Paragraf Stilleri --- */
+        h1 {
+            color: var(--primary-green-dark);
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-weight: 700;
+            border-bottom: 2px solid var(--primary-green-light);
+            padding-bottom: 10px;
+        }
+
+        p {
+            color: var(--text-light);
+            line-height: 1.6;
+            font-size: 1rem;
+        }
+        
+        /* Ek Bilgi Alanı Stili */
+        #extraInfo {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #e3f2fd; /* Açık mavi arka plan */
+            border: 1px solid #90caf9;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 1rem;
+            line-height: 1.4;
+            display: none; /* Başlangıçta gizli */
+            margin-bottom: 20px; /* Alttaki yeni alanla boşluk */
+        }
+        
+        #extraInfo p {
+            margin: 5px 0;
+            color: #1565c0; /* Koyu mavi metin */
+        }
+
+
+        /* --- Yükleme Formu --- */
+        #uploadForm {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        /* --- DÜZELTİLMİŞ Dosya Yükleme Butonu --- */
+        #fileInput {
+            display: none;
+        }
+
+        .custom-file-upload-label {
+            padding: 12px;
+            border: 2px dashed var(--border-dashed-color);
+            border-radius: 8px;
+            background-color: #f1f8e9;
+            color: var(--primary-green-dark);
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .custom-file-upload-label:hover {
+            background-color: var(--background-light);
+            border-color: var(--primary-green-dark);
+            color: #000;
+        }
+        
+        .file-icon {
+            font-size: 1.2rem;
+        }
+
+        /* --- Buton Stilleri --- */
+        #analyzeButton, .ai-button {
+            background-color: var(--primary-green);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        #analyzeButton:hover:not(:disabled), .ai-button:hover:not(:disabled) {
+            background-color: var(--primary-green-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #analyzeButton:disabled, .ai-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* --- Sonuç Alanı --- */
+        #resultArea {
+            margin-top: 35px;
+            padding: 25px;
+            border: 3px dashed var(--border-dashed-color);
+            border-radius: 10px;
+            min-height: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--primary-green-dark);
+            background-color: #f9fbe7;
+            word-break: break-all;
+            transition: border-color 0.5s ease, background-color 0.5s ease;
+            text-align: center;
+        }
+        
+        .result-p {
+            margin: 5px 0;
+            width: 100%;
+        }
+
+        /* Yükleniyor Spinner Animasyonu */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--primary-green);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Önizleme Görseli Stili */
+        #imagePreview {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            margin-top: 25px;
+            border: 2px solid var(--primary-green-dark);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Yapay Zeka Detay Alanları */
+        .details-area {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background-color: #fafafa;
+            text-align: left;
+            min-height: 100px;
+            display: none; 
+            transition: all 0.5s ease;
+            white-space: pre-wrap; 
+            color: var(--text-dark);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .details-area h3 {
+            color: var(--primary-green-dark);
+            font-size: 1.2rem;
+            border-bottom: 1px dashed var(--primary-green-light);
+            padding-bottom: 5px;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        /* Mobil cihazlar için küçük bir düzenleme */
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+                margin: 10px;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+            #analyzeButton, .ai-button {
+                padding: 12px 20px;
+                font-size: 16px;
+            }
+            #resultArea {
+                font-size: 16px;
+                padding: 15px;
+            }
+            .ai-button-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🔬 Gemini ile Polen Analizi</h1>
+        <p>Mikroskop altındaki görüntünüzü yükleyin. Yapay zeka, görüntüde polen olup olmadığını ve varsa tipini tespit edecektir.</p>
+
+        <!-- Önizleme görseli buraya eklenecek -->
+
+        <form id="uploadForm">
+            <!-- Gerçek Dosya Input'u (Gizli) -->
+            <input type="file" id="fileInput" name="file" accept="image/*">
+            
+            <!-- Özel Tasarımlı Etiket -->
+            <label for="fileInput" class="custom-file-upload-label">
+                <span class="file-icon">📁</span>
+                <span id="fileLabelText">Bir Görüntü Dosyası Seçin</span>
+            </label>
+
+            <button type="submit" id="analyzeButton">Analiz Et</button>
+        </form>
+
+        <!-- Sonuç Alanı -->
+        <div id="resultArea">
+            Sonuçlar burada görünecektir.
+        </div>
+        
+        <!-- Ek Bilgi Alanı -->
+        <div id="extraInfo">
+            <p><strong>Polen Tipi:</strong> <span id="pollenTypeResult"></span></p>
+        </div>
+        
+        <!-- YENİ ÖZELLİK: Bilgi Oluşturma Butonları (Flexbox ile düzenlendi) -->
+        <div id="aiButtonContainer" class="flex flex-col md:flex-row gap-4 mt-5">
+            <!-- Polen Bilgisi Butonu -->
+            <button id="generateInfoButton" disabled class="ai-button" style="display: none;">Polen Hakkında Bilgi Al ✨</button>
+            <!-- Alerji Önleme Planı Butonu -->
+            <button id="generateActionPlanButton" disabled class="ai-button" style="display: none;">Alerji Önleme Planı Oluştur 🛡️</button>
+        </div>
+        
+        <!-- YENİ BİLGİ ALANI 1: Polen Detayları (Gemini 1) -->
+        <div id="detailsAreaInfo" class="details-area">
+            <h3>Polen Detayları (Gemini AI)</h3>
+            <p id="pollenDetailsContent">Butona bastığınızda yapay zeka, tespit edilen polen tipi hakkında ayrıntılı bilgiler (alerji, mevsim, kaynak) oluşturacaktır.</p>
+        </div>
+
+        <!-- YENİ BİLGİ ALANI 2: Önleme Planı (Gemini 2) -->
+        <div id="detailsAreaPlan" class="details-area" style="display: none;">
+            <h3>Alerji Önleme Planı (Gemini AI)</h3>
+            <p id="pollenActionPlanContent">Alerji önleme planı buraya gelecek.</p>
+        </div>
+
+    </div>
+
+    <script>
+        // Sayfa tamamen yüklendiğinde bu kod çalışmaya başlar
+        document.addEventListener('DOMContentLoaded', () => {
+            // HTML elementlerini kod içinde kullanmak için yakalıyoruz
+            const fileInput = document.getElementById('fileInput');
+            const uploadForm = document.getElementById('uploadForm');
+            const resultArea = document.getElementById('resultArea');
+            const analyzeButton = document.getElementById('analyzeButton');
+            const fileLabelText = document.getElementById('fileLabelText');
+            const extraInfo = document.getElementById('extraInfo');
+            const pollenTypeResult = document.getElementById('pollenTypeResult');
+            
+            // Gemini Özellikleri İçin Yeni Elementler
+            const generateInfoButton = document.getElementById('generateInfoButton'); 
+            const generateActionPlanButton = document.getElementById('generateActionPlanButton');
+            const detailsAreaInfo = document.getElementById('detailsAreaInfo');
+            const detailsAreaPlan = document.getElementById('detailsAreaPlan');
+            const pollenDetailsContent = document.getElementById('pollenDetailsContent');
+            const pollenActionPlanContent = document.getElementById('pollenActionPlanContent');
+            const aiButtonContainer = document.getElementById('aiButtonContainer');
+             // API Endpoint'leri (Göreli yollar, sunucuyla aynı adresten çalışacak)
+            const API_ENDPOINT = '/analyze'; // Görüntü Analizi
+            const INFO_API_ENDPOINT = '/get_pollen_info'; // Polen Bilgisi Üretimi (Gemini 1)
+            const ACTION_PLAN_API_ENDPOINT = '/get_action_plan'; // Aksiyon Planı Üretimi (Gemini 2)
+
+            // Analiz yapılmadan önce veya dosya değiştirildiğinde butonları sıfırlama
+            const resetUI = () => {
+                resultArea.innerHTML = 'Sonuçlar burada görünecektir.';
+                extraInfo.style.display = 'none';
+                
+                // AI Butonlarını ve Alanlarını Sıfırla
+                aiButtonContainer.style.display = 'none'; 
+                generateInfoButton.style.display = 'none';
+                generateInfoButton.disabled = true;
+                generateActionPlanButton.style.display = 'none';
+                generateActionPlanButton.disabled = true;
+
+                detailsAreaInfo.style.display = 'none';
+                detailsAreaPlan.style.display = 'none';
+                
+                pollenDetailsContent.textContent = 'Butona bastığınızda yapay zeka, tespit edilen polen tipi hakkında ayrıntılı bilgiler (alerji, mevsim, kaynak) oluşturacaktır.';
+                pollenActionPlanContent.textContent = 'Alerji önleme planı buraya gelecek.';
+                
+                resultArea.style.borderColor = '#66bb6a';
+                resultArea.style.backgroundColor = '#f9fbe7';
+            }
+
+            // 1. ÖNİZLEME FONKSİYONU
+            fileInput.addEventListener('change', function() {
+                const file = this.files[0];
+                fileLabelText.textContent = file ? file.name : 'Bir Görüntü Dosyası Seçin';
+
+                // Önizleme ve sıfırlama mantığı
+                document.getElementById('imagePreview')?.remove(); 
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const img = document.createElement('img');
+                        img.id = 'imagePreview';
+                        img.src = e.target.result;
+                        img.alt = 'Seçilen Fotoğraf Önizlemesi';
+                        uploadForm.insertAdjacentElement('beforebegin', img); 
+                    };
+                    reader.readAsDataURL(file); 
+                }
+                resetUI();
+            });
+
+            // 2. ANALİZ İŞLEVİ (Görüntü Analizi)
+            uploadForm.addEventListener('submit', async function(e) {
+                e.preventDefault(); 
+                if (!fileInput.files.length) {
+                    resultArea.innerHTML = '<span style="color: #dc3545;">🚨 Lütfen önce bir fotoğraf seçin!</span>';
+                    return;
+                }
+
+                // Yükleniyor Durumu
+                analyzeButton.disabled = true; 
+                analyzeButton.textContent = 'Analiz Ediliyor...';
+                resetUI(); // AI butonlarını gizle
+                resultArea.innerHTML = `<div class="spinner"></div> Analiz ediliyor, lütfen bekleyin...`;
+                resultArea.style.borderColor = '#007bff'; 
+                resultArea.style.backgroundColor = '#e3f2fd'; 
+
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0], fileInput.files[0].name); 
+
+                try {
+                    const response = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        body: formData 
+                    });
+
+                    if (!response.ok) {
+                        // Eğer yanıt geldiyse ama status kodu hatalıysa (4xx, 5xx)
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`Sunucu Hatası (${response.status}): ${errorData.message || response.statusText}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Sonucun Gösterilmesi
+                    analyzeButton.disabled = false; 
+                    analyzeButton.textContent = 'Analiz Et';
+
+                    const confidence = data.confidence.toFixed(2);
+                    const pollenType = data.pollen_type || 'Belirlenemedi';
+
+                    pollenTypeResult.textContent = pollenType;
+
+                    if (data.is_pollen) {
+                        resultArea.innerHTML = `
+                            <p class="result-p" style="color:#28a745; font-size:1.4rem;">
+                                ✅ **YÜKSEK İHTİMALLE POLEN TESPİT EDİLDİ!**
+                            </p>
+                            <p class="result-p" style="font-size:1rem;">
+                                Güven Puanı: %${confidence}
+                            </p>
+                        `;
+                        resultArea.style.borderColor = '#28a745';
+                        resultArea.style.backgroundColor = '#e6ffed';
+                        extraInfo.style.display = 'block';
+                        
+                        // Polen varsa AI butonlarını göster ve aktif et
+                        if (pollenType !== 'Yok' && pollenType !== 'Hata' && pollenType !== 'Belirlenemedi') {
+                            aiButtonContainer.style.display = 'flex';
+                            
+                            generateInfoButton.style.display = 'block';
+                            generateInfoButton.disabled = false;
+                            generateInfoButton.textContent = `"${pollenType}" Polen Hakkında Bilgi Al ✨`;
+
+                            generateActionPlanButton.style.display = 'block';
+                            generateActionPlanButton.disabled = false;
+                            generateActionPlanButton.textContent = `Alerji Önleme Planı Oluştur 🛡️`;
+                            
+                            detailsAreaInfo.style.display = 'block'; // Varsayılan olarak Info alanını aç
+                        }
+
+                    } else { 
+                        resultArea.innerHTML = `
+                            <p class="result-p" style="color:#dc3545; font-size:1.4rem;">
+                                ❌ **YÜKSEK İHTİMALLE POLEN YOKTUR.**
+                            </p>
+                            <p class="result-p" style="font-size:1rem;">
+                                Güven Puanı: %${confidence}
+                            </p>
+                        `;
+                        resultArea.style.borderColor = '#dc3545'; 
+                        resultArea.style.backgroundColor = '#ffe6e6';
+                        extraInfo.style.display = 'none'; 
+                        aiButtonContainer.style.display = 'none';
+                    } 
+                    
+                } catch (error) { 
+                    console.error('Analiz hatası:', error);
+                    analyzeButton.disabled = false;
+                    analyzeButton.textContent = 'Analiz Et';
+                    
+                    // Geliştirilmiş Hata Mesajı
+                    resultArea.innerHTML = `<span style="color: #dc3545; font-size:1rem;">
+                        Ağ Hatası (Failed to fetch / Bağlantı Hatası): Lütfen **Python sunucusunun (Flask) çalıştığından** ve **CORS ayarlarının** tarayıcı erişimine izin verecek şekilde doğru yapılandırıldığından emin olun. Endpoint: ${API_ENDPOINT} \n\nDetay: ${error.message}
+                    </span>`;
+                    resultArea.style.borderColor = '#dc3545';
+                    resultArea.style.backgroundColor = '#ffe6e6';
+                    extraInfo.style.display = 'none';
+                    aiButtonContainer.style.display = 'none';
+                } 
+            }); 
+            
+            
+            // 3. GEMINI 1: POLEN BİLGİSİ ÜRETME İŞLEVİ
+            generateInfoButton.addEventListener('click', async () => {
+                const pollenType = pollenTypeResult.textContent;
+                
+                // Alanları göster/gizle
+                detailsAreaInfo.style.display = 'block';
+                detailsAreaPlan.style.display = 'none';
+                
+                if (!pollenType || pollenType === 'Polen Yok / Belirlenemedi') {
+                    pollenDetailsContent.textContent = 'Lütfen önce başarılı bir polen analizi yapın.';
+                    return;
+                }
+                
+                // Yükleniyor durumu
+                generateInfoButton.disabled = true;
+                generateInfoButton.textContent = 'Bilgi Oluşturuluyor...';
+                pollenDetailsContent.innerHTML = `<div class="spinner"></div> Detaylar yapay zeka tarafından oluşturuluyor...`;
+                
+                const payload = { pollen_type: pollenType };
+
+                try {
+                    const response = await fetch(INFO_API_ENDPOINT, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`Sunucu Hatası (${response.status}): ${errorData.error || response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    generateInfoButton.disabled = false;
+                    generateInfoButton.textContent = `"${pollenType}" Polen Hakkında Bilgi Al ✨`;
+                    
+                    if (data.info) {
+                        pollenDetailsContent.textContent = data.info; 
+                    } else if (data.error) {
+                         pollenDetailsContent.textContent = `Hata: ${data.error}`;
+                    } else {
+                        pollenDetailsContent.textContent = "Yapay zekadan beklenmedik bir yanıt geldi.";
+                    }
+
+                } catch (error) {
+                    console.error('Bilgi oluşturma hatası:', error);
+                    generateInfoButton.disabled = false;
+                    generateInfoButton.textContent = `"${pollenType}" Polen Hakkında Bilgi Al ✨`;
+                    // Geliştirilmiş Hata Mesajı
+                    pollenDetailsContent.textContent = `Ağ Hatası (Failed to fetch / Bağlantı Hatası): Python sunucunuzun (Flask) **çalıştığından** ve **CORS ayarlarının** tarayıcı erişimine izin verecek şekilde doğru yapılandırıldığından emin olun. Endpoint: ${INFO_API_ENDPOINT} \n\nDetay: ${error.message}`;
+                }
+            });
+            
+            // 4. GEMINI 2: ALERJİ ÖNLEME PLANI İŞLEVİ
+            generateActionPlanButton.addEventListener('click', async () => {
+                const pollenType = pollenTypeResult.textContent;
+                
+                // Alanları göster/gizle
+                detailsAreaPlan.style.display = 'block';
+                detailsAreaInfo.style.display = 'none';
+                
+                if (!pollenType || pollenType === 'Polen Yok / Belirlenemedi') {
+                    pollenActionPlanContent.textContent = 'Lütfen önce başarılı bir polen analizi yapın.';
+                    return;
+                }
+                
+                // Yükleniyor durumu
+                generateActionPlanButton.disabled = true;
+                generateActionPlanButton.textContent = 'Plan Oluşturuluyor...';
+                pollenActionPlanContent.innerHTML = `<div class="spinner"></div> Alerji önleme planı yapay zeka tarafından oluşturuluyor...`;
+                
+                const payload = { pollen_type: pollenType };
+
+                try {
+                    const response = await fetch(ACTION_PLAN_API_ENDPOINT, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`Sunucu Hatası (${response.status}): ${errorData.error || response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    generateActionPlanButton.disabled = false;
+                    generateActionPlanButton.textContent = `Alerji Önleme Planı Oluştur 🛡️`;
+                    
+                    if (data.plan) {
+                        pollenActionPlanContent.textContent = data.plan; // Gelen plan bilgisini göster
+                    } else if (data.error) {
+                         pollenActionPlanContent.textContent = `Hata: ${data.error}`;
+                    } else {
+                        pollenActionPlanContent.textContent = "Yapay zekadan beklenmedik bir yanıt geldi.";
+                    }
+
+                } catch (error) {
+                    console.error('Aksiyon planı oluşturma hatası:', error);
+                    generateActionPlanButton.disabled = false;
+                    generateActionPlanButton.textContent = `Alerji Önleme Planı Oluştur 🛡️`;
+                    // Geliştirilmiş Hata Mesajı
+                    pollenActionPlanContent.textContent = `Ağ Hatası (Failed to fetch / Bağlantı Hatası): Python sunucunuzun (Flask) **çalıştığından** ve **CORS ayarlarının** tarayıcı erişimine izin verecek şekilde doğru yapılandırıldığından emin olun. Endpoint: ${ACTION_PLAN_API_ENDPOINT} \n\nDetay: ${error.message}`;
+                }
+            });
+        }); 
+    </script>
+</body>
+</html>

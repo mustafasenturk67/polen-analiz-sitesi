@@ -1,0 +1,6 @@
+Flask
+Flask-CORS
+python-dotenv
+google-genai
+requests
+gunicorn  # Bu, Render'ın Flask'ı çalıştırması için GEREKLİDİR
