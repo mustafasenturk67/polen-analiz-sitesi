@@ -6,10 +6,11 @@ import base64
 import os
 import random
 import json
+import traceback  # <-- HATA AYIKLAMA İÇİN EKLENDİ
 from dotenv import load_dotenv  # .env dosyasını okumak için
-from google import genai       # Gemini API ile iletişim için
+from google import genai      # Gemini API ile iletişim için
 from google.genai.errors import APIError # API hatalarını yakalamak için
-import requests                # (Opsiyonel) Hava durumu vb. için
+import requests             # (Opsiyonel) Hava durumu vb. için
 
 # --- Temel Flask Uygulama Yapılandırması ---
 load_dotenv() # Ortam değişkenlerini .env dosyasından yükle
@@ -115,41 +116,77 @@ def analyze_with_gemini(image_data):
     except Exception as e:
         return f"Bilinmeyen hata: {e}", False, 0.0, "Hata"
 
-# --- API ENDPOINTS ---\r\n
+# --- API ENDPOINTS ---
 
 @app.route('/')
 def home():
     """index.html dosyasını sunar."""
     return render_template('index.html')
 
+# --- BU FONKSİYON GÜNCELLENDİ (Satır 119) ---
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
-    """Görüntüyü alır ve Gemini ile polen tespiti yapar."""
+    """Görüntüyü alır ve Gemini ile polen tespiti yapar. (Gelişmiş Hata Yakalamalı)"""
     
-    # Dosya Kontrolleri
-    if 'file' not in request.files or request.files['file'].filename == '':
-        return jsonify({'error': 'Geçerli bir dosya bulunamadı.'}), 400
+    try:
+        # --- 1. Dosya Kontrolleri ---
+        if 'file' not in request.files or request.files['file'].filename == '':
+            print("HATA: 'file' anahtarı request.files içinde bulunamadı.")
+            return jsonify({'error': 'Geçerli bir dosya bulunamadı.'}), 400
 
-    file = request.files['file']
-    image_bytes = file.read()
-    
-    # YAPAY ZEKA ANALİZİ GERÇEKLEŞTİRME
-    message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes)
+        file = request.files['file']
+        print(f"Dosya alındı: {file.filename}, MIME: {file.mimetype}")
+        
+        # --- 2. Dosyayı Okuma ---
+        image_bytes = file.read()
+        print(f"Dosya okundu, {len(image_bytes)} bytes.")
+        
+        if len(image_bytes) == 0:
+             print("HATA: Dosya içeriği boş.")
+             return jsonify({'error': 'Yüklenen dosya boş.'}), 400
 
-    if "Hata" in pollen_type or "Hata" in message:
+        # --- 3. YAPAY ZEKA ANALİZİ GERÇEKLEŞTİRME ---
+        print("Gemini analizi başlatılıyor...")
+        message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes)
+        print(f"Gemini analizi tamamlandı: {message}")
+
+        # --- 4. Kontrollü Hata (API'den dönen) ---
+        if "Hata" in pollen_type or "Hata" in message:
+            print(f"Kontrollü hata yakalandı (analyze_with_gemini içinden): {message}")
+            return jsonify({
+                'error': message,
+                'is_pollen': False,
+                'confidence': 0.0,
+                'pollen_type': 'Hata'
+            }), 500
+
+        # --- 5. Başarılı Sonuç ---
+        print("Analiz başarılı, sonuç dönülüyor.")
         return jsonify({
-            'error': message,
-            'is_pollen': False,
-            'confidence': 0.0,
-            'pollen_type': 'Hata'
-        }), 500
+            'message': message,
+            'is_pollen': is_pollen,
+            'confidence': confidence,
+            'pollen_type': pollen_type
+        })
 
-    return jsonify({
-        'message': message,
-        'is_pollen': is_pollen,
-        'confidence': confidence,
-        'pollen_type': pollen_type
-    })
+    except Exception as e:
+        # !!! İŞTE ASIL ARADIĞIMIZ YER BURASI !!!
+        # EĞER 'try' BLOĞUNDA BEKLENMEDİK BİR ÇÖKME OLURSA, BURASI ÇALIŞACAK
+        
+        print("!!!!!!!!!!!!!! KONTROLSÜZ 500 HATASI YAKALANDI !!!!!!!!!!!!!!")
+        print(f"Hata Türü: {type(e).__name__}")
+        print(f"Hata Mesajı: {e}")
+        print("--- TRACEBACK BAŞLANGICI ---")
+        traceback.print_exc()  # ASIL HATA DÖKÜMÜNÜ BU BASACAK
+        print("--- TRACEBACK SONU ---")
+        
+        # Frontend'e de düzgün bir hata mesajı gönderelim
+        return jsonify({
+            "error": "Sunucu tarafında beklenmedik kritik bir hata oluştu.", 
+            "detay": str(e)
+        }), 500
+# --- GÜNCELLEME SONU ---
+
 
 @app.route('/get_pollen_info', methods=['POST'])
 def get_pollen_info_endpoint():
@@ -194,7 +231,7 @@ def get_action_plan_endpoint():
         "pollen_type": pollen_type
     })
 
-# --- Sunucuyu Başlatma Bloğu ---\r\n
+# --- Sunucuyu Başlatma Bloğu ---
 if __name__ == '__main__':
     # Render veya diğer platformlardan gelen PORT değişkenini kullan, yoksa 5000'i kullan
     port = int(os.environ.get('PORT', 5000))
@@ -212,8 +249,8 @@ if __name__ == '__main__':
         print("\n✓ API Anahtarı .env dosyasından başarıyla yüklendi.")
 
     print(f"🚀 Flask sunucusu başlatılıyor...")
-    print(f"   -> Yerel Erişim: http://127.0.0.1:{port}")
-    print("   -> Render'da bu blok çalışmaz, gunicorn kullanılır.")
+    print(f"    -> Yerel Erişim: http://127.0.0.1:{port}")
+    print("    -> Render'da bu blok çalışmaz, gunicorn kullanılır.")
 
     # Yerel test için sunucuyu başlat
     app.run(host='0.0.0.0', port=port, debug=True)
