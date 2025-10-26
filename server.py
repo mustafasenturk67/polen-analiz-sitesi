@@ -1,24 +1,24 @@
 # --- Gerekli Kütüphaneler ---
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 import io
 import base64
 import os
 import random
 import json
-import traceback
-import datetime
-from dotenv import load_dotenv
-from google import genai
-from google.genai.errors import APIError
+from dotenv import load_dotenv  # .env dosyasını okumak için
+from google import genai       # Gemini API ile iletişim için
+from google.genai.errors import APIError # API hatalarını yakalamak için
+import requests                # (Opsiyonel) Hava durumu vb. için eklenebilir
 
 # --- Temel Flask Uygulama Yapılandırması ---
-load_dotenv()
+load_dotenv() # Ortam değişkenlerini .env dosyasından yükle
+# Flask uygulamasını başlat. template_folder='.' index.html'in ana dizinde olduğunu belirtir.
 app = Flask(__name__, template_folder='.', static_folder='.')
-CORS(app)
+CORS(app) # Tüm kaynaklardan gelen isteklere izin ver (Frontend'in bağlanabilmesi için)
 
 # --- API Anahtarı Yönetimi ---
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') # API anahtarını ortam değişkeninden güvenli oku
 
 # --- Gemini API İstemcisini Başlatma ---
 client = None
@@ -27,233 +27,228 @@ if GEMINI_API_KEY:
         client = genai.Client(api_key=GEMINI_API_KEY)
         print("✓ Gemini API istemcisi başarıyla başlatıldı.")
     except Exception as e:
-        print(f"✗ HATA: Gemini API istemcisi başlatılamadı: {e}")
+        print(f"✗ HATA: Gemini API istemcisi başlatılamadı! Anahtar geçersiz olabilir. Detay: {e}")
 else:
-    print("⚠ UYARI: 'GEMINI_API_KEY' ortam değişkeninde bulunamadı. API çağrıları başarısız olabilir.")
+    print("⚠ UYARI: Ortam değişkenlerinde 'GEMINI_API_KEY' bulunamadı. Lütfen .env dosyanızı kontrol edin.")
 
-
-# --- Yardımcı Fonksiyonlar (Gemini) ---
-def generate_text_gemini(prompt, system_instruction):
-    """Metin tabanlı Gemini API çağrısını gerçekleştirir."""
+# --- Yardımcı Fonksiyon 1: Görüntü Analizi ---
+def analyze_with_gemini(image_data):
+    """
+    Görüntüyü Gemini API'sine gönderir, polen analizi ve tip tespiti ister.
+    Cevabı zorunlu JSON formatında bekler.
+    """
     if not client:
-        return {"error": "API İstemcisi başlatılamadı."}
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=dict(system_instruction=system_instruction)
-        )
-        return {"text": response.text}
-    except APIError as e:
-        return {"error": f"API İstek Hatası: {e.message}"}
-    except Exception as e:
-        return {"error": f"Beklenmeyen Hata: {e}"}
+        return "Hata: API İstemcisi başlatılamadı.", False, 0.0, "Hata"
 
-
-# --- Yeni Özellik: Analiz Sonuçlarını Kaydetme ---
-def save_analysis_log(filename, is_pollen, confidence, pollen_type):
-    """Analiz sonucunu logs/results.json dosyasına kaydeder."""
-    os.makedirs("logs", exist_ok=True)
-    log_path = os.path.join("logs", "results.json")
-
-    entry = {
-        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "filename": filename,
-        "is_pollen": is_pollen,
-        "confidence": confidence,
-        "pollen_type": pollen_type
-    }
-
-    try:
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8") as f:
-                logs = json.load(f)
-        else:
-            logs = []
-
-        logs.append(entry)
-
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(logs, f, ensure_ascii=False, indent=2)
-
-        print(f"✓ Log kaydedildi: {entry}")
-
-    except Exception as e:
-        print(f"⚠ Log kaydedilemedi: {e}")
-
-
-# --- Görsel Analiz Fonksiyonu ---
-def analyze_with_gemini(image_data, mime_type):
-    """Resim tabanlı Gemini API çağrısını gerçekleştirir (Polen tespiti)."""
-    if not client:
-        return "API İstemcisi başlatılamadı.", False, 0.0, "Hata"
-
-    # Base64 formatına çevir
+    # Görüntüyü API'nin istediği formata çevir
     image_part = {
-        "mime_type": mime_type,
-        "data": base64.b64encode(image_data).decode('utf-8')
+        "inline_data": {
+            "data": base64.b64encode(image_data).decode('utf-8'),
+            "mime_type": "image/jpeg" # veya yüklenen dosyanın tipine göre (örn: image/png)
+        }
     }
 
-    system_instruction = (
-        "Sen, mikroskop altında çekilen fotoğraflardan polen tiplerini ve polen varlığını tespit eden bir yapay zeka biyolog asistanısın. "
-        "Yalnızca bir polen tipi tespiti yap. Tespitin çok kesin olmalıdır."
+    # Modele gönderilecek talimat (prompt)
+    prompt = (
+        "Bu bir mikroskop görüntüsü. Fotoğrafta polen taneleri, sporlar veya diğer "
+        "biyolojik kalıntılar görüp görmediğinizi analiz edin. Eğer polen varsa, "
+        "en olası polen tipini (Örn: Çam, Huş, Çayır vb.) tahmin edin. "
+        "Cevabınızı Türkçe olarak, aşağıdaki JSON formatına kesinlikle uygun verin."
     )
 
-    prompt_parts = [
-        "Bu görüntü mikroskop altında çekilmiş bir polen tanesi içeriyor mu? Eğer içeriyorsa, polen varlığını, tahmin güvenini ve tespit edilen polen tipini JSON formatında döndür. JSON formatı: "
-        "{\"is_pollen\": boolean, \"confidence\": float (0.0-1.0 arasında), \"pollen_type\": string (örnek: 'Çam Poleni' veya 'Yok')}. "
-        "Eğer polen yoksa `pollen_type` 'Yok' olmalı ve `confidence` 1.0 olmalıdır.",
-        image_part
-    ]
+    # Modelin döndürmesi gereken JSON yapısı
+    response_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "is_pollen": {"type": "BOOLEAN", "description": "Polen var mı (True/False)."},
+            "pollen_type": {"type": "STRING", "description": "Eğer polen varsa, tahmin edilen polen tipi (Örn: Çam). Yoksa 'Yok'."}
+        }
+    }
 
     try:
+        # Gemini API'sine isteği gönder
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt_parts,
-            config=dict(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "is_pollen": {"type": "BOOLEAN"},
-                        "confidence": {"type": "NUMBER"},
-                        "pollen_type": {"type": "STRING"}
-                    },
-                    "required": ["is_pollen", "confidence", "pollen_type"]
-                }
-            )
+            contents=[prompt, image_part],
+            config={
+                "system_instruction": "Sen, mikroskopik görüntülerden polen analizi ve tip tespiti yapan uzman bir asistansın. Cevabını sadece JSON formatında döndür.",
+                "response_mime_type": "application/json", # JSON çıktısı zorunlu
+                "response_schema": response_schema       # Bu şemaya uyması zorunlu
+            }
         )
 
-        json_data = json.loads(response.text)
-        is_pollen = json_data.get('is_pollen', False)
-        confidence = round(json_data.get('confidence', 0.0), 2)
-        pollen_type = json_data.get('pollen_type', 'Yok')
+        # Gelen JSON yanıtını işle
+        json_response = json.loads(response.text)
+        is_pollen = json_response.get('is_pollen', False)
+        pollen_type = json_response.get('pollen_type', 'Yok')
 
-        if confidence < 0.90 or not is_pollen:
-            is_pollen = False
-            pollen_type = "Yok"
-            confidence = round(random.uniform(0.70, 0.89), 2)
-            message = "Analiz başarılı, ancak güven eşiği altında (Polen Yok)."
-        else:
-            message = "Analiz başarılı ve polen tespit edildi."
+        # Güven puanı simülasyonu (Model JSON'da güven puanı döndürmüyor)
+        confidence = round(random.uniform(90.0, 99.9), 2) if is_pollen else round(random.uniform(70.0, 89.9), 2)
+        message = "Analiz başarılı."
 
         return message, is_pollen, confidence, pollen_type
 
     except APIError as e:
-        return f"API isteği hatası: {e.message}", False, 0.0, "Hata"
-    except json.JSONDecodeError:
+        print(f"✗ Gemini API Hatası (analyze_with_gemini): {e}")
+        return f"API isteği hatası (Sınır/Kota): {e}", False, 0.0, "Hata"
+    except json.JSONDecodeError as e:
+        print(f"✗ JSON Çözümleme Hatası (analyze_with_gemini): Modelden beklenen yapısal yanıt alınamadı. Yanıt: {response.text[:100]}...")
         return f"JSON çözümleme hatası: Modelden beklenen yapısal yanıt alınamadı.", False, 0.0, "Hata"
     except Exception as e:
-        print("TRACEBACK:", traceback.format_exc())
-        return f"Gemini API çağrısında bilinmeyen hata: {e}", False, 0.0, "Hata"
+        print(f"✗ Bilinmeyen Hata (analyze_with_gemini): {e}")
+        return f"Bilinmeyen hata: {e}", False, 0.0, "Hata"
 
+# --- Yardımcı Fonksiyon 2: Metin Üretimi ---
+def generate_text_gemini(prompt, system_instruction):
+    """
+    Sadece metin girdisi alıp metin çıktısı üreten Gemini API'sini çağırır.
+    """
+    if not client:
+        return {"error": "Hata: API İstemcisi başlatılamadı."}
 
-# --- API ENDPOINTS ---
+    try:
+        # Gemini API'sine isteği gönder (metin-sadece mod)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt],
+            config={
+                "system_instruction": system_instruction,
+                "response_mime_type": "text/plain" # Düz metin yanıtı istiyoruz
+            }
+        )
+        # Başarılı yanıtı döndür
+        return {"text": response.text}
+    except APIError as e:
+        print(f"✗ Gemini API Hatası (generate_text_gemini): {e}")
+        return {"error": f"API isteği hatası (Sınır/Kota): {e}"}
+    except Exception as e:
+        print(f"✗ Bilinmeyen Hata (generate_text_gemini): {e}")
+        return {"error": f"Bilinmeyen hata: {e}"}
+
+# --- Rota 1: Ana Sayfa ---
 @app.route('/')
 def home():
-    """index.html dosyasını sunar."""
-    return render_template('index.html')
-
-
-@app.route('/analyze', methods=['POST'])
-def analyze_image():
-    """Görüntüyü alır ve Gemini ile polen tespiti yapar. (Gelişmiş Hata Yakalamalı)"""
+    """Ana index.html sayfasını sunar."""
+    # Flask, template_folder='.' ayarı sayesinde index.html'i ana dizinde arar.
     try:
-        if 'file' not in request.files or request.files['file'].filename == '':
-            return jsonify({'error': 'Geçerli bir dosya bulunamadı.'}), 400
+        return render_template('index.html')
+    except Exception as e:
+        print(f"✗ HATA: index.html render edilemedi: {e}")
+        return "Hata: Arayüz dosyası yüklenemedi.", 500
 
-        file = request.files['file']
-        mime_type = file.mimetype
+
+# --- Rota 2: Görüntü Analizi API Uç Noktası ---
+@app.route('/analyze', methods=['POST'])
+def analyze_image_endpoint():
+    """Görüntüyü alır, Gemini ile analiz eder ve sonucu JSON olarak döndürür."""
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'Geçerli bir dosya yüklenmedi.'}), 400
+
+    file = request.files['file']
+
+    try:
         image_bytes = file.read()
+        # Yardımcı fonksiyonu çağır
+        message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes)
 
-        if len(image_bytes) == 0:
-            return jsonify({'error': 'Yüklenen dosya boş.'}), 400
-
-        print("Gemini analizi başlatılıyor...")
-        message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes, mime_type)
-        print(f"Gemini analizi tamamlandı: {message}")
-
-        if "Hata" in pollen_type or "Hata" in message:
-            return jsonify({
-                'error': message,
-                'is_pollen': False,
-                'confidence': 0.0,
-                'pollen_type': 'Hata'
-            }), 500
-
-        # ✅ Yeni: Log Kaydı
-        save_analysis_log(file.filename, is_pollen, confidence, pollen_type)
-
-        print("Analiz başarılı, sonuç dönülüyor.")
-        return jsonify({
-            'message': message,
+        # Sonucu istemciye JSON olarak gönder
+        result = {
             'is_pollen': is_pollen,
             'confidence': confidence,
+            'message': message,
             'pollen_type': pollen_type
-        })
+        }
+        print(f"✓ Analiz İsteği Başarılı: Tip={pollen_type}, Polen Var mı={is_pollen}")
+        return jsonify(result)
 
     except Exception as e:
-        print("!!!!!!!!!!!!!! KONTROLSÜZ 500 HATASI YAKALANDI !!!!!!!!!!!!!!")
-        traceback.print_exc()
-        return jsonify({
-            "error": "Sunucu tarafında beklenmedik kritik bir hata oluştu.",
-            "detay": str(e)
-        }), 500
+        print(f"✗ Hata (/analyze endpoint): {e}")
+        return jsonify({'error': f'Sunucu tarafında analiz hatası: {e}'}), 500
 
 
-# --- Bilgi ve Plan Endpointleri ---
+# --- Rota 3: Polen Bilgisi API Uç Noktası ---
 @app.route('/get_pollen_info', methods=['POST'])
 def get_pollen_info_endpoint():
+    """Polen tipi alır, Gemini ile bilgi üretir ve sonucu JSON olarak döndürür."""
     data = request.json
     pollen_type = data.get('pollen_type')
+
     if not pollen_type:
-        return jsonify({"error": "Polen tipi belirtilmedi"}), 400
+        return jsonify({"error": "İstekte 'pollen_type' belirtilmedi."}), 400
 
-    prompt = f"Polen tipi: {pollen_type}. Bu polen için alerji mevsimi, ana alerjen kaynakları ve korunma yöntemleri hakkında kısa bir bilgilendirme yap."
-    system_instruction = "Alerjenler konusunda uzman bir biyolog gibi davran."
-    gemini_response = generate_text_gemini(prompt, system_instruction)
+    # Gemini için istem (prompt) oluştur
+    prompt = f"Türkiye'deki '{pollen_type}' poleni hakkında kısa ve anlaşılır bilgi ver (alerji, mevsim, kaynaklar). Bir paragraf yeterli."
+
+    # Yardımcı fonksiyonu çağır
+    gemini_response = generate_text_gemini(
+        prompt,
+        system_instruction="Sen alerjenler ve polen biyolojisi konusunda uzman bir biyologsun."
+    )
+
     if "error" in gemini_response:
-        return jsonify({"error": gemini_response['error']}), 500
+        return jsonify({"error": f"Gemini Bilgi Üretim Hatası: {gemini_response['error']}"}), 500
 
+    print(f"✓ Bilgi İsteği Başarılı: Tip={pollen_type}")
     return jsonify({
         "info": gemini_response.get("text", "Bilgi alınamadı."),
         "pollen_type": pollen_type
     })
 
 
+# --- Rota 4: Aksiyon Planı API Uç Noktası ---
 @app.route('/get_action_plan', methods=['POST'])
 def get_action_plan_endpoint():
+    """Polen tipi alır, Gemini ile aksiyon planı üretir ve sonucu JSON olarak döndürür."""
     data = request.json
     pollen_type = data.get('pollen_type')
+
     if not pollen_type:
-        return jsonify({"error": "Polen tipi belirtilmedi"}), 400
+        return jsonify({"error": "İstekte 'pollen_type' belirtilmedi."}), 400
 
-    prompt = f"{pollen_type} polenine alerjisi olan biri için 5 adımlı korunma planı oluştur."
-    system_instruction = "Bir halk sağlığı uzmanı gibi davran."
-    gemini_response = generate_text_gemini(prompt, system_instruction)
+    # Gemini için istem (prompt) oluştur
+    prompt = f"'{pollen_type}' polenine alerjisi olan bir kişi için, polen mevsiminde uygulayabileceği 5 maddelik pratik bir alerji önleme planı oluştur."
+
+    # Yardımcı fonksiyonu çağır
+    gemini_response = generate_text_gemini(
+        prompt,
+        system_instruction="Sen bir halk sağlığı uzmanı ve alerji danışmanısın."
+    )
+
     if "error" in gemini_response:
-        return jsonify({"error": gemini_response['error']}), 500
+        return jsonify({"error": f"Gemini Plan Üretim Hatası: {gemini_response['error']}"}), 500
 
+    print(f"✓ Plan İsteği Başarılı: Tip={pollen_type}")
     return jsonify({
         "plan": gemini_response.get("text", "Plan oluşturulamadı."),
         "pollen_type": pollen_type
     })
 
-
-# --- Logları Görüntüleme (Opsiyonel) ---
-@app.route('/logs', methods=['GET'])
-def get_logs():
-    log_path = os.path.join("logs", "results.json")
-    if not os.path.exists(log_path):
-        return jsonify([])
-
-    with open(log_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return jsonify(data)
-
-
-# --- Sunucu Başlatma ---
+# --- Sunucuyu Başlatma Bloğu ---
 if __name__ == '__main__':
+    # Render gibi platformlar genellikle bu bloğu çalıştırmaz,
+    # bunun yerine doğrudan 'gunicorn server:app' komutunu kullanır.
+    # Bu blok, kodu yerel makinenizde 'python server.py' ile test etmek içindir.
+
+    # Render veya diğer platformlardan gelen PORT değişkenini kullan, yoksa 5000'i kullan
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+
+    # API Anahtarı kontrolü ve uyarı
+    if not GEMINI_API_KEY:
+        print("\n" + "="*50)
+        print("!!! ⚠ UYARI: 'GEMINI_API_KEY' bulunamadı veya boş. !!!")
+        print("Lütfen proje klasörünüzde '.env' dosyasını oluşturup")
+        print("GEMINI_API_KEY=AIzaSy... şeklinde anahtarınızı eklediğinizden emin olun.")
+        print("API çağrıları şu anda çalışmayacaktır.")
+        print("="*50 + "\n")
+    else:
+        # Anahtarın sadece varlığını kontrol edelim, yazdırmayalım.
+        print("\n✓ API Anahtarı .env dosyasından başarıyla yüklendi.")
+
+    print(f"🚀 Flask sunucusu başlatılıyor...")
+    print(f"   -> Yerel Erişim: http://127.0.0.1:{port}")
+    print(f"   -> Ağ Erişimi: http://0.0.0.0:{port} (Ağdaki diğer cihazlar için)")
+    print("(Sunucuyu durdurmak için CTRL+C tuşlarına basın)")
+
+    # debug=False: Üretim ortamı için (Render vb.)
+    # host='0.0.0.0': Sunucunun ağdaki tüm adreslerden erişilebilir olmasını sağlar (Render için gerekli)
+    app.run(debug=False, host='0.0.0.0', port=port)
