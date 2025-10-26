@@ -6,20 +6,19 @@ import base64
 import os
 import random
 import json
-import traceback  # <-- HATA AYIKLAMA İÇİN EKLENDİ
-from dotenv import load_dotenv  # .env dosyasını okumak için
-from google import genai      # Gemini API ile iletişim için
-from google.genai.errors import APIError # API hatalarını yakalamak için
-import requests             # (Opsiyonel) Hava durumu vb. için
+import traceback
+from dotenv import load_dotenv
+from google import genai
+from google.genai.errors import APIError
+import requests
 
 # --- Temel Flask Uygulama Yapılandırması ---
-load_dotenv() # Ortam değişkenlerini .env dosyasından yükle
-# Flask uygulamasını başlat. template_folder='.' index.html'in ana dizinde olduğunu belirtir.
+load_dotenv() 
 app = Flask(__name__, template_folder='.', static_folder='.')
-CORS(app) # Tüm kaynaklardan gelen isteklere izin ver (Frontend'in bağlanabilmesi için)
+CORS(app) 
 
 # --- API Anahtarı Yönetimi ---
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') # API anahtarını ortam değişkeninden güvenli oku
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') 
 
 # --- Gemini API İstemcisini Başlatma ---
 client = None
@@ -53,12 +52,22 @@ def generate_text_gemini(prompt, system_instruction):
     except Exception as e:
         return {"error": f"Beklenmeyen Hata: {e}"}
 
-def analyze_with_gemini(image_data):
+# --- BU FONKSİYON GÜNCELLENDİ ---
+def analyze_with_gemini(image_data, mime_type): # <<<<< DEĞİŞTİ (mime_type parametresi eklendi)
     """Resim tabanlı Gemini API çağrısını gerçekleştirir (Polen tespiti)."""
     if not client: return "API İstemcisi başlatılamadı.", False, 0.0, "Hata"
 
     # Görüntü nesnesini oluştur
-    image_part = io.BytesIO(image_data)
+    # image_part = io.BytesIO(image_data) # <<<<< ESKİ KOD (YANLIŞ)
+    
+    # <<<<< YENİ KOD (DOĞRU) BAŞLANGICI
+    # Gemini API'sine hem veriyi (baytları) hem de dosya tipini (mime_type)
+    # içeren bir sözlük (dictionary) gönderiyoruz.
+    image_part = {
+        "mime_type": mime_type,
+        "data": image_data
+    }
+    # <<<<< YENİ KOD (DOĞRU) SONU
     
     # Sisteme Talimat
     system_instruction = (
@@ -70,7 +79,7 @@ def analyze_with_gemini(image_data):
     prompt_parts = [
         "Bu görüntü mikroskop altında çekilmiş bir polen tanesi içeriyor mu? Eğer içeriyorsa, polen varlığını, tahmin güvenini ve tespit edilen polen tipini JSON formatında döndür. JSON formatı: {\"is_pollen\": boolean, \"confidence\": float (0.0-1.0 arasında), \"pollen_type\": string (Türkçe polen tipi örn: 'Çam Poleni' veya 'Yok')} "
         "Eğer polen yoksa `pollen_type` 'Yok' olmalı ve `confidence` 1.0 olmalıdır.",
-        image_part
+        image_part # <<<<< Bu artık io.BytesIO değil, {"mime_type": ..., "data": ...} içeren bir sözlük
     ]
     
     try:
@@ -114,7 +123,9 @@ def analyze_with_gemini(image_data):
     except json.JSONDecodeError:
         return f"JSON çözümleme hatası: Modelden beklenen yapısal yanıt alınamadı. Yanıt: {response.text[:100]}", False, 0.0, "Hata"
     except Exception as e:
-        return f"Bilinmeyen hata: {e}", False, 0.0, "Hata"
+        # Hata mesajını daha spesifik hale getirelim
+        print(f"analyze_with_gemini içinde hata: {e}") # <<<<< DEĞİŞTİ (Daha net loglama)
+        return f"Gemini API çağrısında bilinmeyen hata: {e}", False, 0.0, "Hata"
 
 # --- API ENDPOINTS ---
 
@@ -123,7 +134,7 @@ def home():
     """index.html dosyasını sunar."""
     return render_template('index.html')
 
-# --- BU FONKSİYON GÜNCELLENDİ (Satır 119) ---
+# --- BU FONKSİYON GÜNCELLENDİ ---
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
     """Görüntüyü alır ve Gemini ile polen tespiti yapar. (Gelişmiş Hata Yakalamalı)"""
@@ -135,7 +146,8 @@ def analyze_image():
             return jsonify({'error': 'Geçerli bir dosya bulunamadı.'}), 400
 
         file = request.files['file']
-        print(f"Dosya alındı: {file.filename}, MIME: {file.mimetype}")
+        mime_type = file.mimetype # <<<<< DEĞİŞTİ (MIME tipi burada alındı)
+        print(f"Dosya alındı: {file.filename}, MIME: {mime_type}")
         
         # --- 2. Dosyayı Okuma ---
         image_bytes = file.read()
@@ -147,7 +159,8 @@ def analyze_image():
 
         # --- 3. YAPAY ZEKA ANALİZİ GERÇEKLEŞTİRME ---
         print("Gemini analizi başlatılıyor...")
-        message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes)
+        # <<<<< DEĞİŞTİ (mime_type buraya eklendi)
+        message, is_pollen, confidence, pollen_type = analyze_with_gemini(image_bytes, mime_type) 
         print(f"Gemini analizi tamamlandı: {message}")
 
         # --- 4. Kontrollü Hata (API'den dönen) ---
@@ -170,17 +183,14 @@ def analyze_image():
         })
 
     except Exception as e:
-        # !!! İŞTE ASIL ARADIĞIMIZ YER BURASI !!!
-        # EĞER 'try' BLOĞUNDA BEKLENMEDİK BİR ÇÖKME OLURSA, BURASI ÇALIŞACAK
-        
+        # BEKLENMEDİK ÇÖKME DURUMU
         print("!!!!!!!!!!!!!! KONTROLSÜZ 500 HATASI YAKALANDI !!!!!!!!!!!!!!")
         print(f"Hata Türü: {type(e).__name__}")
         print(f"Hata Mesajı: {e}")
         print("--- TRACEBACK BAŞLANGICI ---")
-        traceback.print_exc()  # ASIL HATA DÖKÜMÜNÜ BU BASACAK
+        traceback.print_exc()
         print("--- TRACEBACK SONU ---")
         
-        # Frontend'e de düzgün bir hata mesajı gönderelim
         return jsonify({
             "error": "Sunucu tarafında beklenmedik kritik bir hata oluştu.", 
             "detay": str(e)
@@ -196,7 +206,6 @@ def get_pollen_info_endpoint():
     
     if not pollen_type: return jsonify({"error": "Polen tipi belirtilmedi"}), 400
     
-    # Gemini'den bilgi alma isteği
     prompt = f"Polen tipi: {pollen_type}. Bu polen için alerji mevsimi, ana alerjen kaynakları ve korunma yöntemleri hakkında kısa ve bilgilendirici bir paragraf özetle. Yanıtın sadece Türkçe ve bilgilendirici paragraf olsun."
     system_instruction = "Alerjenler konusunda uzman bir biyolog ve bilgilendirme uzmanı gibi davran."
     
@@ -218,7 +227,6 @@ def get_action_plan_endpoint():
     
     if not pollen_type: return jsonify({"error": "Polen tipi belirtilmedi"}), 400
     
-    # Gemini'den eylem planı alma isteği
     prompt = f"{pollen_type} polenine alerjisi olan bir kişi için, polen mevsiminde günlük olarak uygulayabileceği, ev ve dış ortamda alınması gereken önlemleri içeren, maddeler halinde 5 adımlı bir alerji önleme planı oluşturun. Maddelendirme kullan."
     system_instruction = "Bir halk sağlığı uzmanı ve alerji danışmanı gibi davran. Yanıt sadece 5 maddeden oluşmalı."
     
@@ -233,10 +241,8 @@ def get_action_plan_endpoint():
 
 # --- Sunucuyu Başlatma Bloğu ---
 if __name__ == '__main__':
-    # Render veya diğer platformlardan gelen PORT değişkenini kullan, yoksa 5000'i kullan
     port = int(os.environ.get('PORT', 5000))
 
-    # API Anahtarı kontrolü ve uyarı
     if not GEMINI_API_KEY:
         print("\n" + "="*50)
         print("!!! ⚠ UYARI: 'GEMINI_API_KEY' bulunamadı veya boş. !!!")
@@ -245,12 +251,10 @@ if __name__ == '__main__':
         print("API çağrıları şu anda çalışmayacaktır.")
         print("="*50 + "\n")
     else:
-        # Anahtarın sadece varlığını kontrol edelim, yazdırmayalım.
         print("\n✓ API Anahtarı .env dosyasından başarıyla yüklendi.")
 
     print(f"🚀 Flask sunucusu başlatılıyor...")
     print(f"    -> Yerel Erişim: http://127.0.0.1:{port}")
     print("    -> Render'da bu blok çalışmaz, gunicorn kullanılır.")
 
-    # Yerel test için sunucuyu başlat
     app.run(host='0.0.0.0', port=port, debug=True)
