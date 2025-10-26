@@ -40,12 +40,13 @@ def analyze_with_gemini(image_data):
         return {"error": "API istemcisi başlatılamadı. Lütfen 'GEMINI_API_KEY' ortam değişkenini kontrol edin."}
     
     try:
-        # Görüntü verilerini modelin anlayacağı formata dönüştür
-        image_part = {
-            "mime_type": "image/jpeg",  # Görüntü tipini varsayıyoruz
-            "data": image_data
-        }
-
+        # Pydantic/GenAI kütüphanesinin beklediği doğru formata dönüştür
+        # Base64 string'i doğrudan 'data' olarak değil, 'inline_data' yapısı içinde göndermeliyiz.
+        image_part = genai.types.Part.from_base64(
+            data=image_data,
+            mime_type="image/jpeg"
+        )
+        
         # Analiz için istem (prompt)
         prompt = (
             "Bu, bir mikroskop altındaki polen görüntüsüdür. Görüntüyü dikkatlice incele. "
@@ -55,9 +56,10 @@ def analyze_with_gemini(image_data):
             "JSON formatında yanıtla: {\"is_pollen\": \"Evet/Hayır\", \"pollen_type\": \"Tip Adı\", \"confidence\": 0.95}"
         )
         
+        # NOTE: Burada contents, [image_part (Part nesnesi), metin (str)] şeklinde olmalı.
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[image_part, {"text": prompt}],
+            contents=[image_part, prompt], # Burada ikinci eleman artık sadece string olmalı
             config={"response_mime_type": "application/json"}
         )
         
@@ -172,9 +174,11 @@ def get_pollen_info_endpoint():
     
     # Grounding'i etkinleştirerek Google'dan güncel bilgi al
     try:
+        # contents listesine sadece prompt string'ini geçmek yerine, prompt'u listeye alalım.
+        # tools: [{"google_search": {}}] kullanıldığı için bu, metin oluşturma API'si olacaktır.
         gemini_response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt,
+            contents=[prompt], # Tek elemanlı liste
             config={"system_instruction": "Alerjenler ve güncel çevre verileri konusunda uzman bir biyolog gibi davran."},
             tools=[{"google_search": {}}]
         )
@@ -205,7 +209,8 @@ def get_action_plan_endpoint():
     prompt = f"{pollen_type} polenine alerjisi olan biri için 5 adımlı detaylı bir alerji önleme planı oluştur. Her adımı kalın (bold) olarak başlat."
 
     # Grounding kullanılmayacak, sadece yaratıcı metin oluşturma
-    gemini_response = generate_text_gemini(prompt, system_instruction="Bir halk sağlığı uzmanı ve alerji hekimi gibi davran.")
+    # generate_text_gemini fonksiyonu çağrılırken prompt string'ini liste içine almalıyız
+    gemini_response = generate_text_gemini([prompt], system_instruction="Bir halk sağlığı uzmanı ve alerji hekimi gibi davran.")
     
     if "error" in gemini_response:
         return jsonify({"error": gemini_response['error']}), 500
