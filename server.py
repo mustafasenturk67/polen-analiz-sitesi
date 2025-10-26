@@ -34,17 +34,21 @@ else:
 
 # --- YARDIMCI FONKSİYONLAR (Gemini) ---
 
-def generate_text_gemini(prompt, system_instruction):
+def generate_text_gemini(prompt, system_instruction, use_search=False):
     """Metin tabanlı Gemini API çağrısını gerçekleştirir."""
     if not client: return {"error": "API İstemcisi başlatılamadı."}
     
+    config_dict = dict(system_instruction=system_instruction)
+    
+    # Gerçek zamanlı bilgi için Google Search aracını ekle
+    if use_search:
+        config_dict['tools'] = [{"google_search": {}}]
+
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            config=dict(
-                system_instruction=system_instruction
-            )
+            config=config_dict
         )
         return {"text": response.text}
     except APIError as e:
@@ -153,23 +157,34 @@ def analyze_image():
 
 @app.route('/get_pollen_info', methods=['POST'])
 def get_pollen_info_endpoint():
-    """Tespit edilen polen tipi hakkında detaylı bilgi (mevsim, alerjen, korunma) alır."""
+    """
+    Tespit edilen polen tipi, mevsim ve korunma bilgisine ek olarak,
+    kullanıcının girdiği şehir için anlık polen yoğunluğu hakkında bilgi alır.
+    """
     data = request.json
     pollen_type = data.get('pollen_type')
+    city = data.get('city', 'Türkiye genelinde') # Eğer şehir bilgisi gelmezse genel bilgi verir
     
     if not pollen_type: return jsonify({"error": "Polen tipi belirtilmedi"}), 400
     
-    # Gemini'den bilgi alma isteği
-    prompt = f"Polen tipi: {pollen_type}. Bu polen için alerji mevsimi, ana alerjen kaynakları ve korunma yöntemleri hakkında kısa ve bilgilendirici bir paragraf özetle. Yanıtın sadece Türkçe ve bilgilendirici paragraf olsun."
-    system_instruction = "Alerjenler konusunda uzman bir biyolog ve bilgilendirme uzmanı gibi davran."
+    # Gemini'den bilgi alma isteği (Google Search ile desteklenir)
+    prompt = (
+        f"Polen tipi: {pollen_type}. Şehir: {city}. "
+        f"Öncelikle bu polen için alerji mevsimini ve ana alerjen kaynaklarını özetle. "
+        f"Ardından, **{city}** şehrindeki bu polen tipinin **şu anki yoğunluğu** hakkında Google Arama sonuçlarına dayanarak kısa bir bilgi ver. "
+        f"Son olarak, korunma yöntemlerini ekle. Yanıtın sadece Türkçe ve bilgilendirici bir metin olsun."
+    )
+    system_instruction = "Alerjenler konusunda uzman bir biyolog ve güncel veri analisti gibi davran. Bilgiyi güncel polen yoğunluğu verileriyle destekle."
     
-    gemini_response = generate_text_gemini(prompt, system_instruction=system_instruction)
+    # use_search=True ekleyerek Gemini'nin Google Arama'yı kullanmasını sağlıyoruz.
+    gemini_response = generate_text_gemini(prompt, system_instruction=system_instruction, use_search=True)
     
     if "error" in gemini_response: return jsonify({"error": gemini_response['error']}), 500
     
     return jsonify({
         "info": gemini_response.get("text", "Bilgi alınamadı."),
-        "pollen_type": pollen_type
+        "pollen_type": pollen_type,
+        "city": city
     })
 
 
