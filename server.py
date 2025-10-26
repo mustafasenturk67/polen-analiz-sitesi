@@ -34,17 +34,25 @@ else:
 
 # --- YARDIMCI FONKSİYONLAR (Gemini) ---
 
-def analyze_with_gemini(image_data):
+# analyze_with_gemini fonksiyonu artık MIME tipini de alıyor
+def analyze_with_gemini(image_data, mime_type):
     # API İstemcisi kontrolü
     if not client:
         return {"error": "API istemcisi başlatılamadı. Lütfen 'GEMINI_API_KEY' ortam değişkenini kontrol edin."}
     
+    # Base64 verisinin geçerliliğini kontrol et
+    if not isinstance(image_data, str) or not image_data:
+         return {"error": "Görüntü verisi Base64 formatında geçerli bir string değil."}
+
+    # MIME tipinin geçerli olup olmadığını kontrol et (güvenlik için basit kontrol)
+    if not mime_type or not mime_type.startswith("image/"):
+        return {"error": f"Geçersiz veya desteklenmeyen resim formatı: {mime_type}"}
+
     try:
-        # Pydantic/GenAI kütüphanesinin beklediği doğru formata dönüştür
-        # Base64 string'i doğrudan 'data' olarak değil, 'inline_data' yapısı içinde göndermeliyiz.
+        # Gelen MIME tipini kullanarak Part nesnesini oluştur
         image_part = genai.types.Part.from_base64(
             data=image_data,
-            mime_type="image/jpeg"
+            mime_type=mime_type # Dinamik MIME tipi kullanılıyor
         )
         
         # Analiz için istem (prompt)
@@ -56,10 +64,9 @@ def analyze_with_gemini(image_data):
             "JSON formatında yanıtla: {\"is_pollen\": \"Evet/Hayır\", \"pollen_type\": \"Tip Adı\", \"confidence\": 0.95}"
         )
         
-        # NOTE: Burada contents, [image_part (Part nesnesi), metin (str)] şeklinde olmalı.
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[image_part, prompt], # Burada ikinci eleman artık sadece string olmalı
+            contents=[image_part, prompt], # Part nesnesi ve string prompt
             config={"response_mime_type": "application/json"}
         )
         
@@ -84,8 +91,14 @@ def analyze_with_gemini(image_data):
         print(f"Gemini Yanıtı JSON Hatası: {response.text}")
         return {"error": "Gemini'den gelen yanıt JSON formatında değildi."}
     except Exception as e:
+        error_message = str(e)
+        # Hatanın Base64 ile ilgili olup olmadığını kontrol et
+        if "from_base64" in error_message or "bytes" in error_message or "mime_type" in error_message:
+             # MIME tipini de hata mesajına ekleyelim
+            return {"error": f"Görüntü Base64 dönüştürme hatası (MIME: {mime_type}). Yüklenen dosyanın formatını kontrol edin."}
+        
         print(f"Beklenmedik Analiz Hatası: {e}")
-        return {"error": f"Beklenmedik bir hata oluştu: {str(e)}"}
+        return {"error": f"Beklenmedik bir hata oluştu: {error_message}"}
 
 def generate_text_gemini(user_prompt, system_instruction):
     # API İstemcisi kontrolü
@@ -98,7 +111,6 @@ def generate_text_gemini(user_prompt, system_instruction):
             contents=user_prompt,
             config={
                 "system_instruction": system_instruction,
-                # Grounding (Google Search) sadece bilgi alma endpoint'i için kullanılacak
             }
         )
         return {"text": response.text}
@@ -114,14 +126,12 @@ def generate_text_gemini(user_prompt, system_instruction):
 
 @app.route('/')
 def index():
-    # index.html dosyasını ana sayfa olarak sun
     return render_template('index.html')
 
 # --- API ENDPOINTS ---
 
 @app.route('/analyze', methods=['POST'])
 def analyze_endpoint():
-    # API İstemcisi kontrolü
     if not client:
         return jsonify({"error": "Sunucu hatası: API anahtarı eksik."}), 500
 
@@ -132,19 +142,20 @@ def analyze_endpoint():
     if file.filename == '':
         return jsonify({"error": "Geçersiz dosya adı"}), 400
 
+    # MIME tipini dosyadan al
+    file_mime_type = file.mimetype
+    print(f"Yüklenen dosyanın MIME tipi: {file_mime_type}") # Kontrol için log
+
     try:
-        # Görüntüyü Base64'e dönüştür
         image_bytes = file.read()
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
-        # Gemini Analizi
-        analysis_result = analyze_with_gemini(image_base64)
+        # Gemini Analizi'ne MIME tipini de gönder
+        analysis_result = analyze_with_gemini(image_base64, file_mime_type)
 
         if "error" in analysis_result:
-             # Eğer hata varsa 500 kodu ile frontend'e gönder
             return jsonify({"error": analysis_result['error']}), 500
 
-        # Başarılı yanıt
         return jsonify(analysis_result)
 
     except Exception as e:
@@ -154,31 +165,26 @@ def analyze_endpoint():
 
 @app.route('/get_pollen_info', methods=['POST'])
 def get_pollen_info_endpoint():
-    # API İstemcisi kontrolü
     if not client:
         return jsonify({"error": "Sunucu hatası: API anahtarı eksik."}), 500
 
     data = request.json
     pollen_type = data.get('pollen_type')
-    city = data.get('city') or 'Türkiye' # Şehir boş gelirse tüm Türkiye için bilgi ara
+    city = data.get('city') or 'Türkiye' 
 
     if not pollen_type:
         return jsonify({"error": "Polen tipi belirtilmedi"}), 400
     
-    # Grounding (Google Search) ile bilgi toplama
     prompt = (
         f"'{pollen_type}' poleninin özelliklerini, alerji mevsimini ve kaynaklarını özetle. "
         f"Ayrıca, şu anda {city} bölgesindeki '{pollen_type}' poleninin **güncel yoğunluk seviyesi** (düşük/orta/yüksek) nedir? "
         "Yanıtında, toplanan güncel yoğunluk verisini mutlaka belirt."
     )
     
-    # Grounding'i etkinleştirerek Google'dan güncel bilgi al
     try:
-        # contents listesine sadece prompt string'ini geçmek yerine, prompt'u listeye alalım.
-        # tools: [{"google_search": {}}] kullanıldığı için bu, metin oluşturma API'si olacaktır.
         gemini_response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[prompt], # Tek elemanlı liste
+            contents=[prompt], 
             config={"system_instruction": "Alerjenler ve güncel çevre verileri konusunda uzman bir biyolog gibi davran."},
             tools=[{"google_search": {}}]
         )
@@ -196,7 +202,6 @@ def get_pollen_info_endpoint():
 
 @app.route('/get_action_plan', methods=['POST'])
 def get_action_plan_endpoint():
-    # API İstemcisi kontrolü
     if not client:
         return jsonify({"error": "Sunucu hatası: API anahtarı eksik."}), 500
         
@@ -208,8 +213,6 @@ def get_action_plan_endpoint():
         
     prompt = f"{pollen_type} polenine alerjisi olan biri için 5 adımlı detaylı bir alerji önleme planı oluştur. Her adımı kalın (bold) olarak başlat."
 
-    # Grounding kullanılmayacak, sadece yaratıcı metin oluşturma
-    # generate_text_gemini fonksiyonu çağrılırken prompt string'ini liste içine almalıyız
     gemini_response = generate_text_gemini([prompt], system_instruction="Bir halk sağlığı uzmanı ve alerji hekimi gibi davran.")
     
     if "error" in gemini_response:
@@ -220,7 +223,6 @@ def get_action_plan_endpoint():
 
 # --- Sunucuyu Çalıştırma ---
 if __name__ == '__main__':
-    # Bu blok, kodu yerel makinenizde 'python server.py' ile test etmek içindir.
     port = int(os.environ.get('PORT', 5000))
 
     if not GEMINI_API_KEY:
@@ -235,4 +237,6 @@ if __name__ == '__main__':
 
     print(f"🚀 Flask sunucusu başlatılıyor...")
     print(f"   -> Yerel Erişim: http://127.0.0.1:{port}")
-    app.run(debug=True, host='0.0.0.0', port=port)
+    # Render için debug=False olmalı, yerel test için True kalabilir
+    app.run(debug=False, host='0.0.0.0', port=port)
+
