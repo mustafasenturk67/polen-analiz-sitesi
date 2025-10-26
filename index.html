@@ -332,10 +332,11 @@
             const pollenDetailsContent = document.getElementById('pollenDetailsContent');
             const pollenActionPlanContent = document.getElementById('pollenActionPlanContent');
             const aiButtonContainer = document.getElementById('aiButtonContainer');
-             // API Endpoint'leri (Göreli yollar, sunucuyla aynı adresten çalışacak)
-            const API_ENDPOINT = '/analyze'; // Görüntü Analizi
-            const INFO_API_ENDPOINT = '/get_pollen_info'; // Polen Bilgisi Üretimi (Gemini 1)
-            const ACTION_PLAN_API_ENDPOINT = '/get_action_plan'; // Aksiyon Planı Üretimi (Gemini 2)
+            
+            // API Endpoint'leri
+            const API_ENDPOINT = 'http://127.0.0.1:5000/analyze'; // Görüntü Analizi
+            const INFO_API_ENDPOINT = 'http://127.0.0.1:5000/get_pollen_info'; // Polen Bilgisi Üretimi (Gemini 1)
+            const ACTION_PLAN_API_ENDPOINT = 'http://127.0.0.1:5000/get_action_plan'; // Aksiyon Planı Üretimi (Gemini 2)
 
             // Analiz yapılmadan önce veya dosya değiştirildiğinde butonları sıfırlama
             const resetUI = () => {
