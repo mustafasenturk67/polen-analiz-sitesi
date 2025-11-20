@@ -68,7 +68,7 @@ def analyze_with_gemini(image_data):
     try:
         # Gemini API'sine isteği gönder
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3-pro-preview',
             contents=[prompt, image_part],
             config={
                 "system_instruction": "Sen, mikroskopik görüntülerden polen analizi ve tip tespiti yapan uzman bir asistansın. Cevabını sadece JSON formatında döndür.",
@@ -109,7 +109,7 @@ def generate_text_gemini(prompt, system_instruction):
     try:
         # Gemini API'sine isteği gönder (metin-sadece mod)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3-pro-preview',
             contents=[prompt],
             config={
                 "system_instruction": system_instruction,
