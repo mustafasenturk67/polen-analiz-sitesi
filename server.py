@@ -52,7 +52,7 @@ def analyze_with_gemini(image_data):
     prompt = (
         "Bu bir mikroskop görüntüsü. Fotoğrafta polen taneleri, sporlar veya diğer "
         "biyolojik kalıntılar görüp görmediğinizi analiz edin. Eğer polen varsa, "
-        "en olası polen tipini (Örn: Çam, Huş, Çayır vb.) tahmin edin. "
+        "en olası polen tipini taksonomik bilimsel adıyla (Örn: Alnus glutinosa, Betula vb.) tahmin edin. "
         "Cevabınızı Türkçe olarak, aşağıdaki JSON formatına kesinlikle uygun verin."
     )
 
@@ -61,14 +61,14 @@ def analyze_with_gemini(image_data):
         "type": "OBJECT",
         "properties": {
             "is_pollen": {"type": "BOOLEAN", "description": "Polen var mı (True/False)."},
-            "pollen_type": {"type": "STRING", "description": "Eğer polen varsa, tahmin edilen polen tipi (Örn: Çam). Yoksa 'Yok'."}
+            "pollen_type": {"type": "STRING", "description": "Eğer polen varsa, tahmin edilen polen tipi (Örn: Alnus glutinosa). Yoksa 'Yok'."}
         }
     }
 
     try:
         # Gemini API'sine isteği gönder
         response = client.models.generate_content(
-            model='gemini-3-pro-preview',
+            model='gemini-1.5-pro',
             contents=[prompt, image_part],
             config={
                 "system_instruction": "Sen, mikroskopik görüntülerden polen analizi ve tip tespiti yapan uzman bir asistansın. Cevabını sadece JSON formatında döndür.",
@@ -109,7 +109,7 @@ def generate_text_gemini(prompt, system_instruction):
     try:
         # Gemini API'sine isteği gönder (metin-sadece mod)
         response = client.models.generate_content(
-            model='gemini-3-pro-preview',
+            model='gemini-1.5-pro',
             contents=[prompt],
             config={
                 "system_instruction": system_instruction,
@@ -153,10 +153,10 @@ def analyze_image_endpoint():
 
         # Sonucu istemciye JSON olarak gönder
         result = {
-            'is_pollen': is_pollen,
-            'confidence': confidence,
-            'message': message,
-            'pollen_type': pollen_type
+            "is_pollen": is_pollen,
+            "confidence": confidence,
+            "message": message,
+            "pollen_type": pollen_type
         }
         print(f"✓ Analiz İsteği Başarılı: Tip={pollen_type}, Polen Var mı={is_pollen}")
         return jsonify(result)
