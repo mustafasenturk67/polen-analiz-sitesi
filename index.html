@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Polen Varlığı Analizi (Gemini Destekli)</title>
-    <!-- Google Font (Inter) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -33,7 +32,6 @@
             margin: 0;
 
             /* Arka Plan Görseli - Doğal bir polen/bitki görseli kullanılabilir */
-            /* Placeholder: Bitki ve mikroskop görüntüsü */
             background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
             background-size: cover;
             background-color: var(--background-light); 
@@ -265,13 +263,9 @@
         <h1>🔬 Gemini ile Polen Analizi</h1>
         <p>Mikroskop altındaki görüntünüzü yükleyin. Yapay zeka, görüntüde polen olup olmadığını ve varsa tipini tespit edecektir.</p>
 
-        <!-- Önizleme görseli buraya eklenecek -->
-
         <form id="uploadForm">
-            <!-- Gerçek Dosya Input'u (Gizli) -->
             <input type="file" id="fileInput" name="file" accept="image/*">
             
-            <!-- Özel Tasarımlı Etiket -->
             <label for="fileInput" class="custom-file-upload-label">
                 <span class="file-icon">📁</span>
                 <span id="fileLabelText">Bir Görüntü Dosyası Seçin</span>
@@ -280,31 +274,24 @@
             <button type="submit" id="analyzeButton">Analiz Et</button>
         </form>
 
-        <!-- Sonuç Alanı -->
         <div id="resultArea">
             Sonuçlar burada görünecektir.
         </div>
         
-        <!-- Ek Bilgi Alanı -->
         <div id="extraInfo">
             <p><strong>Polen Tipi:</strong> <span id="pollenTypeResult"></span></p>
         </div>
         
-        <!-- YENİ ÖZELLİK: Bilgi Oluşturma Butonları (Flexbox ile düzenlendi) -->
         <div id="aiButtonContainer" class="flex flex-col md:flex-row gap-4 mt-5">
-            <!-- Polen Bilgisi Butonu -->
             <button id="generateInfoButton" disabled class="ai-button" style="display: none;">Polen Hakkında Bilgi Al ✨</button>
-            <!-- Alerji Önleme Planı Butonu -->
             <button id="generateActionPlanButton" disabled class="ai-button" style="display: none;">Alerji Önleme Planı Oluştur 🛡️</button>
         </div>
         
-        <!-- YENİ BİLGİ ALANI 1: Polen Detayları (Gemini 1) -->
         <div id="detailsAreaInfo" class="details-area">
             <h3>Polen Detayları (Gemini AI)</h3>
             <p id="pollenDetailsContent">Butona bastığınızda yapay zeka, tespit edilen polen tipi hakkında ayrıntılı bilgiler (alerji, mevsim, kaynak) oluşturacaktır.</p>
         </div>
 
-        <!-- YENİ BİLGİ ALANI 2: Önleme Planı (Gemini 2) -->
         <div id="detailsAreaPlan" class="details-area" style="display: none;">
             <h3>Alerji Önleme Planı (Gemini AI)</h3>
             <p id="pollenActionPlanContent">Alerji önleme planı buraya gelecek.</p>
@@ -422,7 +409,22 @@
 
                     pollenTypeResult.textContent = pollenType;
 
-                    if (data.is_pollen) {
+                    // Hata ve Sonuç Kontrolleri
+                    if (pollenType === 'Hata') {
+                        resultArea.innerHTML = `
+                            <p class="result-p" style="color:#dc3545; font-size:1.4rem;">
+                                ❌ **ANALİZ BAŞARISIZ (API HATASI)**
+                            </p>
+                            <p class="result-p" style="font-size:1rem;">
+                                Yapay zeka modeli ile bağlantı kurulamadı. Sunucu terminalindeki hata loglarını kontrol edin.
+                            </p>
+                        `;
+                        resultArea.style.borderColor = '#dc3545'; 
+                        resultArea.style.backgroundColor = '#ffe6e6';
+                        extraInfo.style.display = 'block'; 
+                        aiButtonContainer.style.display = 'none';
+
+                    } else if (data.is_pollen) {
                         resultArea.innerHTML = `
                             <p class="result-p" style="color:#28a745; font-size:1.4rem;">
                                 ✅ **YÜKSEK İHTİMALLE POLEN TESPİT EDİLDİ!**
